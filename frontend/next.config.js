@@ -2,18 +2,20 @@
 const nextConfig = {
   reactStrictMode: true,
   images: {
-    remotePatterns: [
-      { protocol: "https", hostname: "images.unsplash.com" },
-      { protocol: "https", hostname: "res.cloudinary.com" },
-    ],
+    unoptimized: true,
+    remotePatterns: [{ protocol: "https", hostname: "**" }],
   },
   async rewrites() {
-    return [
-      {
-        source: "/api/:path*",
-        destination: "http://localhost:5000/api/:path*",
-      },
-    ];
+    // Only rewrite to localhost:5000 during local development when NOT on Vercel
+    if (process.env.NODE_ENV === "development" && !process.env.VERCEL) {
+      return [
+        {
+          source: "/api/:path*",
+          destination: "http://localhost:5000/api/:path*",
+        },
+      ];
+    }
+    return [];
   },
 };
 
