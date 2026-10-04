@@ -1,0 +1,204 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  CITIZEN
+  REVIEWER
+  ADMIN
+}
+
+enum ReviewAction {
+  CONFIRM
+  MODIFY
+  REJECT
+  REQUEST_INFO
+}
+
+enum Priority {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ObservationStatus {
+  SUBMITTED
+  ANALYZING
+  ASSESSED
+  IN_REVIEW
+  VERIFIED
+  REJECTED
+  NEEDS_INFO
+}
+
+model User {
+  id            String         @id @default(uuid())
+  email         String         @unique
+  name          String
+  role          Role           @default(CITIZEN)
+  organization  String?
+  avatarUrl     String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+
+  observations  Observation[]  @relation("UserObservations")
+  reviews       Review[]       @relation("ReviewerActions")
+  auditLogs     AuditLog[]
+}
+
+model StreamSite {
+  id             String                @id @default(uuid())
+  name           String
+  code           String                @unique
+  description    String
+  streamType     String                @default("Urban Freshwater Stream")
+  catchmentArea  String?
+  latitude       Float
+  longitude      Float
+  createdAt      DateTime              @default(now())
+  updatedAt      DateTime              @updatedAt
+
+  observations   Observation[]
+  metrics        EnvironmentalMetric[]
+}
+
+model Location {
+  id          String        @id @default(uuid())
+  latitude    Float
+  longitude   Float
+  address     String?
+  city        String?
+  siteId      String?
+  
+  observation Observation?  @relation
+}
+
+model Observation {
+  id                   String                @id @default(uuid())
+  userId               String?
+  user                 User?                 @relation("UserObservations", fields: [userId], references: [id])
+  siteId               String?
+  site                 StreamSite?           @relation(fields: [siteId], references: [id])
+  locationId           String?               @unique
+  location             Location?             @relation(fields: [locationId], references: [id], onDelete: Cascade)
+  
+  title                String                @default("Citizen Stream Observation")
+  status               ObservationStatus     @default(SUBMITTED)
+  priority             Priority              @default(MEDIUM)
+  
+  waterAppearance      String                // e.g. "Normal", "Unusual Discoloration", "Turbid/Muddy", "Foamy", "Oily Sheen"
+  vegetationCondition  String                // e.g. "Abundant Riparian", "Moderate", "Severely Reduced", "Excessive Algae"
+  wildlifeObserved     String                // e.g. "Fish Present", "Invertebrates Detected", "Waterfowl", "No Visible Life"
+  pollutionIndicators  String                // e.g. "Plastic Litter", "Outfall Discharge", "Odor", "Chemical Film", "None"
+  odorReported         String?               // e.g. "Musty", "Sulfur/Earthy", "Chemical", "None"
+  notes                String?
+  observedAt           DateTime              @default(now())
+  
+  createdAt            DateTime              @default(now())
+  updatedAt            DateTime              @updatedAt
+
+  images               ObservationImage[]
+  indicators           ObservationIndicator[]
+  aiAnalyses           AIAnalysis[]
+  reviews              Review[]
+
+  @@index([status])
+  @@index([priority])
+  @@index([siteId])
+  @@index([createdAt])
+}
+
+model ObservationImage {
+  id             String       @id @default(uuid())
+  observationId  String
+  observation    Observation  @relation(fields: [observationId], references: [id], onDelete: Cascade)
+  url            String
+  storageKey     String?
+  caption        String?
+  width          Int?
+  height         Int?
+  mimeType       String?      @default("image/jpeg")
+  createdAt      DateTime     @default(now())
+}
+
+model ObservationIndicator {
+  id             String       @id @default(uuid())
+  observationId  String
+  observation    Observation  @relation(fields: [observationId], references: [id], onDelete: Cascade)
+  indicatorType  String       // water_appearance, vegetation, wildlife, pollution, odor
+  value          String
+  confidence     Float        @default(1.0)
+  evidence       String?
+}
+
+model AIAnalysis {
+  id                 String       @id @default(uuid())
+  observationId      String
+  observation        Observation  @relation(fields: [observationId], references: [id], onDelete: Cascade)
+  provider           String       @default("HYDREON-Multimodal-Engine") // openai, gemini, mock
+  modelVersion       String       @default("v1.2-structured")
+  overallStatus      String       // NO_CONCERN, ATTENTION_RECOMMENDED, HIGH_PRIORITY_SIGNAL
+  overallConfidence  Float        // 0.0 - 1.0 (e.g. 0.84)
+  reasoningSummary   String
+  uncertaintyNotes   String
+  recommendedReview  Boolean      @default(true)
+  rawJson            String       // Stringified structured JSON response
+  createdAt          DateTime     @default(now())
+
+  signals            AISignal[]
+}
+
+model AISignal {
+  id             String      @id @default(uuid())
+  aiAnalysisId   String
+  aiAnalysis     AIAnalysis  @relation(fields: [aiAnalysisId], references: [id], onDelete: Cascade)
+  signalType     String      // ecosystem_stress, biodiversity_risk, water_quality_anomaly, physical_disturbance
+  confidence     Float
+  evidence       String
+  indicatorRef   String?
+}
+
+model Review {
+  id                  String        @id @default(uuid())
+  observationId       String
+  observation         Observation   @relation(fields: [observationId], references: [id], onDelete: Cascade)
+  reviewerId          String
+  reviewer            User          @relation("ReviewerActions", fields: [reviewerId], references: [id])
+  action              ReviewAction
+  previousStatus      ObservationStatus
+  newStatus           ObservationStatus
+  reviewerNotes       String
+  modifiedIndicators  String?       // JSON string of overridden indicators if modified
+  createdAt           DateTime      @default(now())
+}
+
+model EnvironmentalMetric {
+  id            String      @id @default(uuid())
+  siteId        String
+  site          StreamSite  @relation(fields: [siteId], references: [id], onDelete: Cascade)
+  metricType    String      // turbidity_index, riparian_coverage_pct, biodiversity_score, visual_stress_index
+  numericValue  Float
+  unit          String
+  source        String      @default("Citizen Science Aggregate")
+  recordedAt    DateTime    @default(now())
+}
+
+model AuditLog {
+  id          String    @id @default(uuid())
+  userId      String?
+  user        User?     @relation(fields: [userId], references: [id])
+  action      String    // OBSERVATION_SUBMITTED, AI_ASSESSMENT_GENERATED, REVIEW_CONFIRMED, REVIEW_MODIFIED, etc.
+  entityType  String
+  entityId    String
+  details     String?   // JSON payload
+  createdAt   DateTime  @default(now())
+}
