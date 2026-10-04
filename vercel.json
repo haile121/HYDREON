@@ -2,12 +2,11 @@
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "services": {
     "frontend": {
-      "root": "frontend",
-      "framework": "nextjs"
+      "root": "frontend/"
     },
     "backend": {
-      "root": "backend",
-      "framework": "express"
+      "root": "backend/",
+      "entrypoint": "src/index.ts"
     }
   },
   "rewrites": [
